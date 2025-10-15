@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>모델 정보</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 16px;
+      background: #f7f8fa;
+      color: #222;
+      font-family: 'Segoe UI', 'Roboto', 'Apple SD Gothic Neo', 'Noto Sans KR', Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .container {
+      max-width: 100%;
+      margin: 0 auto;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #e3e7ee;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #3a4153;
+    }
+
+    .close-btn {
+      background: #e74c3c;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .close-btn:hover {
+      background: #c0392b;
+    }
+
+    .info-section {
+      margin-bottom: 20px;
+      padding: 16px;
+      background: white;
+      border: 1px solid #e3e7ee;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(60,80,120,0.04);
+    }
+
+    .info-section h3 {
+      margin: 0 0 12px 0;
+      font-size: 15px;
+      font-weight: 600;
+      color: #3a4153;
+    }
+
+    .info-display {
+      background: #f7f8fa;
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      color: #7a869a;
+    }
+
+    .info-display strong {
+      color: #3a4153;
+    }
+
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .control-grid {
+      display: grid;
+      grid-template-columns: 30px 1fr 30px 30px;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .axis-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #7a869a;
+      text-align: center;
+    }
+
+    .value-input {
+      background: white;
+      border: 1px solid #e3e7ee;
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 13px;
+      color: #3a4153;
+      text-align: center;
+    }
+
+    .value-input:focus {
+      outline: none;
+      border-color: #4f46e5;
+      box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+    }
+
+    .step-btn {
+      background: #e3e7ee;
+      border: 1px solid #d0d6e2;
+      border-radius: 4px;
+      color: #3a4153;
+      cursor: pointer;
+      font-size: 11px;
+      padding: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 28px;
+    }
+
+    .step-btn:hover {
+      background: #d0d6e2;
+    }
+
+    .mode-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      margin: 16px 0;
+    }
+
+    .mode-btn {
+      background: #f7f8fa;
+      border: 1px solid #e3e7ee;
+      border-radius: 8px;
+      color: #3a4153;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 12px;
+      padding: 10px 6px;
+      transition: all 0.2s;
+    }
+
+    .mode-btn:hover {
+      background: #e3e7ee;
+    }
+
+    .mode-btn.active {
+      background: #4f46e5;
+      color: white;
+      border-color: #4f46e5;
+    }
+
+    .action-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .action-btn {
+      background: #4f46e5;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 12px;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+
+    .action-btn:hover {
+      background: #3730a3;
+    }
+
+    .action-btn.secondary {
+      background: #6b7280;
+    }
+
+    .action-btn.secondary:hover {
+      background: #4b5563;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px 20px;
+      color: #7a869a;
+      font-style: italic;
+    }
+
+    .error {
+      background: #fee2e2;
+      color: #dc2626;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📊 모델 정보</h1>
+      <button class="close-btn" onclick="closeWindow()">✕ 닫기</button>
+    </div>
+
+    <div id="content">
+      <div class="loading">
+        메인 창으로부터 모델 데이터를 받는 중...
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentModelData = null;
+
+    // 메인 창으로부터 메시지 수신
+    window.addEventListener('message', function(event) {
+      const { type, data } = event.data;
+      
+      switch(type) {
+        case 'modelData':
+          currentModelData = data;
+          renderModelInfo(data);
+          break;
+        case 'modeChanged':
+          updateModeButtons(data.mode);
+          break;
+      }
+    });
+
+    function renderModelInfo(data) {
+      const content = document.getElementById('content');
+      
+      if (!data) {
+        content.innerHTML = '<div class="error">모델 데이터를 받을 수 없습니다.</div>';
+        return;
+      }
+
+      content.innerHTML = `
+        <div class="info-section">
+          <h3>📋 기본 정보</h3>
+          <div class="info-display">
+            <div><strong>이름:</strong> ${data.name}</div>
+            <div><strong>ID:</strong> ${data.id}</div>
+          </div>
+          ${data.bounds ? `
+            <div class="info-display">
+              <div><strong>실제 크기:</strong> X:${data.bounds.size.x} Y:${data.bounds.size.y} Z:${data.bounds.size.z}</div>
+              <div><strong>중심 좌표:</strong> X:${data.bounds.center.x} Y:${data.bounds.center.y} Z:${data.bounds.center.z}</div>
+            </div>
+          ` : '<div class="info-display">크기 정보를 계산할 수 없습니다.</div>'}
+        </div>
+
+        <div class="info-section">
+          <h3>📍 위치 (Position)</h3>
+          <div class="control-row">
+            <div class="control-grid">
+              <div class="axis-label">X</div>
+              <input type="number" class="value-input" id="posX" step="0.01" value="${data.transform.position.x}">
+              <button class="step-btn" onclick="adjustValue('position', 'x', -0.01)">-</button>
+              <button class="step-btn" onclick="adjustValue('position', 'x', 0.01)">+</button>
+            </div>
+            <div class="control-grid">
+              <div class="axis-label">Y</div>
+              <input type="number" class="value-input" id="posY" step="0.01" value="${data.transform.position.y}">
+              <button class="step-btn" onclick="adjustValue('position', 'y', -0.01)">-</button>
+              <button class="step-btn" onclick="adjustValue('position', 'y', 0.01)">+</button>
+            </div>
+            <div class="control-grid">
+              <div class="axis-label">Z</div>
+              <input type="number" class="value-input" id="posZ" step="0.01" value="${data.transform.position.z}">
+              <button class="step-btn" onclick="adjustValue('position', 'z', -0.01)">-</button>
+              <button class="step-btn" onclick="adjustValue('position', 'z', 0.01)">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="info-section">
+          <h3>🔄 회전 (Rotation)</h3>
+          <div class="control-row">
+            <div class="control-grid">
+              <div class="axis-label">X</div>
+              <input type="number" class="value-input" id="rotX" step="0.1" value="${data.transform.rotation.x}">
+              <button class="step-btn" onclick="adjustValue('rotation', 'x', -0.1)">-</button>
+              <button class="step-btn" onclick="adjustValue('rotation', 'x', 0.1)">+</button>
+            </div>
+            <div class="control-grid">
+              <div class="axis-label">Y</div>
+              <input type="number" class="value-input" id="rotY" step="0.1" value="${data.transform.rotation.y}">
+              <button class="step-btn" onclick="adjustValue('rotation', 'y', -0.1)">-</button>
+              <button class="step-btn" onclick="adjustValue('rotation', 'y', 0.1)">+</button>
+            </div>
+            <div class="control-grid">
+              <div class="axis-label">Z</div>
+              <input type="number" class="value-input" id="rotZ" step="0.1" value="${data.transform.rotation.z}">
+              <button class="step-btn" onclick="adjustValue('rotation', 'z', -0.1)">-</button>
+              <button class="step-btn" onclick="adjustValue('rotation', 'z', 0.1)">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="info-section">
+          <h3>📏 스케일 (Scale)</h3>
+          <div class="control-row">
+            <div class="control-grid">
+              <div class="axis-label">X</div>
+              <input type="number" class="value-input" id="scaleX" step="0.1" value="${data.transform.scaling.x}">
+              <button class="step-btn" onclick="adjustValue('scaling', 'x', -0.1)">-</button>
+              <button class="step-btn" onclick="adjustValue('scaling', 'x', 0.1)">+</button>
+            </div>
+            <div class="control-grid">
+              <div class="axis-label">Y</div>
+              <input type="number" class="value-input" id="scaleY" step="0.1" value="${data.transform.scaling.y}">
+              <button class="step-btn" onclick="adjustValue('scaling', 'y', -0.1)">-</button>
+              <button class="step-btn" onclick="adjustValue('scaling', 'y', 0.1)">+</button>
+            </div>
+            <div class="control-grid">
+              <div class="axis-label">Z</div>
+              <input type="number" class="value-input" id="scaleZ" step="0.1" value="${data.transform.scaling.z}">
+              <button class="step-btn" onclick="adjustValue('scaling', 'z', -0.1)">-</button>
+              <button class="step-btn" onclick="adjustValue('scaling', 'z', 0.1)">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="info-section">
+          <h3>🛠️ 조작 모드</h3>
+          <div class="mode-section">
+            <button class="mode-btn" id="translateBtn" onclick="changeMode('translate')">이동 (W)</button>
+            <button class="mode-btn" id="rotateBtn" onclick="changeMode('rotate')">회전 (E)</button>
+            <button class="mode-btn" id="scaleBtn" onclick="changeMode('scale')">크기 (R)</button>
+          </div>
+          
+          <div class="action-section">
+            <button class="action-btn secondary" onclick="resetTransform()">원점으로</button>
+            <button class="action-btn" onclick="focusModel()">포커스</button>
+          </div>
+        </div>
+      `;
+
+      // 입력 필드 이벤트 리스너 추가
+      setupInputListeners();
+      
+      // 모드 버튼 업데이트
+      updateModeButtons(data.currentMode);
+    }
+
+    function setupInputListeners() {
+      const inputs = ['posX', 'posY', 'posZ', 'rotX', 'rotY', 'rotZ', 'scaleX', 'scaleY', 'scaleZ'];
+      
+      inputs.forEach(id => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        
+        input.addEventListener('change', () => {
+          const value = parseFloat(input.value) || 0;
+          let property, axis;
+          
+          if (id.startsWith('pos')) {
+            property = 'position';
+            axis = id.replace('pos', '').toLowerCase();
+          } else if (id.startsWith('rot')) {
+            property = 'rotation';
+            axis = id.replace('rot', '').toLowerCase();
+          } else if (id.startsWith('scale')) {
+            property = 'scaling';
+            axis = id.replace('scale', '').toLowerCase();
+          }
+          
+          sendTransformChange(property, axis, value);
+        });
+      });
+    }
+
+    function adjustValue(property, axis, delta) {
+      const inputId = property === 'position' ? `pos${axis.toUpperCase()}` : 
+                     property === 'rotation' ? `rot${axis.toUpperCase()}` : 
+                     `scale${axis.toUpperCase()}`;
+      
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      
+      const currentValue = parseFloat(input.value) || 0;
+      const newValue = currentValue + delta;
+      
+      // 정밀도에 따른 반올림
+      if (property === 'rotation') {
+        input.value = newValue.toFixed(1);
+      } else if (property === 'position') {
+        input.value = newValue.toFixed(4);
+      } else {
+        input.value = Math.max(0.001, newValue).toFixed(3);
+      }
+      
+      sendTransformChange(property, axis, parseFloat(input.value));
+    }
+
+    function sendTransformChange(property, axis, value) {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({
+          type: 'transformChange',
+          data: { property, axis, value }
+        }, '*');
+      }
+    }
+
+    function changeMode(mode) {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({
+          type: 'modeChange',
+          data: { mode }
+        }, '*');
+      }
+      updateModeButtons(mode);
+    }
+
+    function updateModeButtons(currentMode) {
+      ['translateBtn', 'rotateBtn', 'scaleBtn'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) {
+          btn.classList.remove('active');
+        }
+      });
+      
+      const activeId = currentMode === 'translate' ? 'translateBtn' : 
+                      currentMode === 'rotate' ? 'rotateBtn' : 'scaleBtn';
+      const activeBtn = document.getElementById(activeId);
+      if (activeBtn) {
+        activeBtn.classList.add('active');
+      }
+    }
+
+    function resetTransform() {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({
+          type: 'resetTransform'
+        }, '*');
+      }
+    }
+
+    function focusModel() {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({
+          type: 'focusModel'
+        }, '*');
+      }
+    }
+
+    function closeWindow() {
+      window.close();
+    }
+
+    // 윈도우 로드 완료 시 메인 창에 업데이트 요청
+    window.addEventListener('load', function() {
+      setTimeout(() => {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage({
+            type: 'requestUpdate'
+          }, '*');
+        }
+      }, 100);
+    });
+
+    // 키보드 단축키
+    window.addEventListener('keydown', function(e) {
+      const k = e.key.toLowerCase();
+      
+      if (k === 'w') {
+        changeMode('translate');
+        e.preventDefault();
+      } else if (k === 'e') {
+        changeMode('rotate');
+        e.preventDefault();
+      } else if (k === 'r') {
+        changeMode('scale');
+        e.preventDefault();
+      } else if (k === 'escape') {
+        closeWindow();
+        e.preventDefault();
+      }
+    });
+
+    // 윈도우가 닫힐 때 메인 창에 알림
+    window.addEventListener('beforeunload', function() {
+      if (window.opener && !window.opener.closed) {
+        // 메인 창의 참조 변수 초기화를 위한 메시지 (옵션)
+        try {
+          window.opener.postMessage({
+            type: 'popupClosed'
+          }, '*');
+        } catch(e) {
+          // 메인 창이 이미 닫힌 경우 무시
+        }
+      }
+    });
+  </script>
+</body>
+</html>

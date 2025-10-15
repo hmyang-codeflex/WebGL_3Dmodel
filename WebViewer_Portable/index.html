@@ -1,0 +1,1218 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Babylon 3D 뷰어 - Popup Version</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+  <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
+  <style>
+    html, body {
+      height:100%; margin:0;
+      background:#f7f8fa; color:#222; font-family:'Segoe UI', 'Roboto', 'Apple SD Gothic Neo', 'Noto Sans KR', Arial, sans-serif;
+    }
+    #app { 
+      position:fixed; 
+      inset:0; 
+      background:#fff; 
+    }
+    canvas { 
+      width:100%; 
+      height:100%; 
+      display:block; 
+      background:#fff; 
+      border-radius:12px; 
+      box-shadow:0 2px 16px 0 rgba(60,80,120,0.08); 
+    }
+    #hoverInfoPanel {
+      position: absolute;
+      right: 20px;
+      top: 20px;
+      z-index: 1000;
+      border: 1px solid #e3e7ee;
+      border-radius: 16px;
+      padding: 18px 14px;
+      background: #fff;
+      display: none;
+      box-shadow: 0 2px 8px 0 rgba(60,80,120,0.04);
+      max-width: 300px;
+    }
+    #hoverInfoPanel h3 {
+      margin: 0 0 10px 0;
+      font-size: 15px;
+      font-weight: 600;
+      color: #3a4153;
+    }
+    #hoverInfoPanel div {
+      font-size: 12px;
+      color: #7a869a;
+      margin-bottom: 4px;
+    }
+
+    /* 상단 컨트롤 버튼들 */
+    .top-controls {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      display: flex;
+      gap: 10px;
+    }
+
+    .control-btn {
+      padding: 10px 16px;
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid #e3e7ee;
+      border-radius: 8px;
+      color: #3a4153;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 14px;
+      box-shadow: 0 2px 8px rgba(60,80,120,0.15);
+      backdrop-filter: blur(8px);
+      transition: all 0.2s;
+    }
+
+    .control-btn:hover {
+      background: rgba(255, 255, 255, 1);
+      box-shadow: 0 4px 12px rgba(60,80,120,0.25);
+      transform: translateY(-1px);
+    }
+
+    .control-btn:active {
+      transform: translateY(0);
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    /* 활성 모드 버튼 스타일 */
+    .mode-btn-active {
+      background: #4f46e5 !important;
+      color: white !important;
+      box-shadow: 0 2px 4px rgba(79, 70, 229, 0.3) !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="renderCanvas"></canvas>
+    
+    <!-- 상단 컨트롤 버튼들 -->
+    <div class="top-controls">
+      <label for="fileInput" class="control-btn">📂 모델 열기</label>
+      <button id="modelInfoBtn" class="control-btn">📊 모델 정보</button>
+      <button id="settingsBtn" class="control-btn">⚙️ 설정</button>
+    </div>
+    
+    <!-- 숨겨진 파일 입력 -->
+    <input type="file" id="fileInput" accept=".glb,.gltf,.GLB,.GLTF,.bin" multiple>
+  </div>
+
+  <script>
+    /*
+    =================================================================
+                        WebGL 3D 뷰어 - 팝업 버전
+    =================================================================
+    주 사용 모델: urdf_colored_metallic.glb (로봇 팔 시스템)
+    좌표계: URDF → glTF 변환 완료 (X축 -90도 회전, Z=0 기준점)
+    기능: 3D 모델 로드/조작, 기즈모 제어, 경계박스 표시
+    모델 정보창: 별도 팝업으로 열림
+    =================================================================
+    */
+    
+    // ===== 기본 Babylon 세팅 =====
+    const canvas = document.getElementById("renderCanvas");
+    const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer:true, stencil:true });
+    const scene  = new BABYLON.Scene(engine);
+    
+    // 기본 배경색 (초기값)
+    scene.clearColor = new BABYLON.Color4(0x0f/255, 0x11/255, 0x15/255, 1);
+
+    const camera = new BABYLON.ArcRotateCamera("cam", -Math.PI/4, Math.PI/3, 3, BABYLON.Vector3.Zero(), scene);
+    camera.attachControl(canvas, true);
+    camera.lowerRadiusLimit = 0.01; 
+    camera.wheelPrecision = 30;
+
+    new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0,1,0), scene).intensity = 0.7;
+    const dir = new BABYLON.DirectionalLight("dir", new BABYLON.Vector3(-5,-10,-7), scene); 
+    dir.intensity = 1.0;
+
+    // localStorage 유틸
+    function getLS(key, def) {
+      try { const v = localStorage.getItem(key); return v !== null ? v : def; } catch(e) { return def; }
+    }
+    function setLS(key, val) {
+      try { localStorage.setItem(key, val); } catch(e) {}
+    }
+
+    // 바닥 그리드
+    let gridSize = parseFloat(getLS('gridSize', '10'));
+    let ground = BABYLON.Mesh.CreateGround("grid", gridSize, gridSize, 2, scene);
+    let gridMat = new BABYLON.GridMaterial("gridMat", scene);
+    gridMat.mainColor = BABYLON.Color3.FromHexString(getLS('gridMainColor', '#232531'));
+    gridMat.lineColor = BABYLON.Color3.FromHexString(getLS('gridLineColor', '#3a4153'));
+    ground.material = gridMat;
+
+    // ===== 상태 변수들 =====
+    let rootContainer = new BABYLON.TransformNode("rootContainer", scene); // 메인 모델 컨테이너
+    let currentContainer = null;
+    let spaceLocal = true; // 로컬/월드 좌표계 모드
+    let hl = null;
+    let modelInfoWindow = null; // 모델 정보 팝업 윈도우 참조
+
+    // ===== 3D 조작 기즈모 시스템 =====
+    const gizmoManager = new BABYLON.GizmoManager(scene);
+    gizmoManager.boundingBoxGizmoEnabled = false;
+    gizmoManager.positionGizmoEnabled = true;
+    gizmoManager.usePointerToAttachGizmos = false;
+
+    let currentMode = 'translate';
+
+    function setMode(mode){
+      currentMode = mode;
+      gizmoManager.positionGizmoEnabled = (mode === 'translate');
+      gizmoManager.rotationGizmoEnabled = (mode === 'rotate');
+      gizmoManager.scaleGizmoEnabled    = (mode === 'scale');
+      
+      console.log(`Mode changed to: ${mode}`);
+      
+      // 모델 정보 팝업에 모드 변경 알림
+      if (modelInfoWindow && !modelInfoWindow.closed) {
+        modelInfoWindow.postMessage({
+          type: 'modeChanged',
+          data: { mode: mode }
+        }, '*');
+      }
+    }
+    
+    function setSpace(local){
+      spaceLocal = !!local;
+      const follow = spaceLocal;
+      if (gizmoManager.positionGizmo) gizmoManager.positionGizmo.updateGizmoRotationToMatchAttachedMesh = follow;
+      if (gizmoManager.rotationGizmo) gizmoManager.rotationGizmo.updateGizmoRotationToMatchAttachedMesh = follow;
+      if (gizmoManager.scaleGizmo)    gizmoManager.scaleGizmo.updateGizmoRotationToMatchAttachedMesh = follow;
+    }
+    
+    setMode('translate'); 
+    setSpace(true);
+
+    // ===== 유틸 함수들 =====
+    function attachKeepWorld(child, parent){
+      const wm = child.getWorldMatrix().clone();
+      child.setParent(parent);
+      const s = new BABYLON.Vector3(), r = new BABYLON.Quaternion(), t = new BABYLON.Vector3();
+      wm.decompose(s, r, t);
+      child.rotationQuaternion = r;
+      child.scaling = s; 
+      child.position = t;
+      child.computeWorldMatrix(true);
+    }
+
+    function computeBounds(node){
+      let meshes = node.getChildMeshes ? node.getChildMeshes(false) : [];
+      if (node instanceof BABYLON.AbstractMesh) meshes = [node, ...meshes];
+      if (meshes.length === 0) return null;
+      let min = new BABYLON.Vector3(+Infinity,+Infinity,+Infinity);
+      let max = new BABYLON.Vector3(-Infinity,-Infinity,-Infinity);
+      for (const m of meshes){
+        m.computeWorldMatrix(true);
+        const bi = m.getBoundingInfo();
+        const bmin = bi.boundingBox.minimumWorld;
+        const bmax = bi.boundingBox.maximumWorld;
+        min = BABYLON.Vector3.Minimize(min, bmin);
+        max = BABYLON.Vector3.Maximize(max, bmax);
+      }
+      return {min, max, size: max.subtract(min), center: min.add(max).scale(0.5)};
+    }
+
+    function focusNode(node) {
+      const b = computeBounds(node); 
+      if (!b) return;
+      
+      // 카메라 타겟을 모델 중심으로 설정
+      camera.setTarget(b.center);
+      
+      // 적절한 거리 계산 (모델 크기에 따라)
+      const maxDim = Math.max(b.size.x, b.size.y, b.size.z);
+      camera.radius = Math.max(maxDim * 1.5, 0.1); // 최소 거리 보장
+      
+      // 카메라 각도 초기화
+      camera.alpha = -Math.PI / 4;  // -45도
+      camera.beta = Math.PI / 3;    // 60도
+      
+      console.log('Camera focused on bounds:', b, 'radius:', camera.radius);
+    }
+
+    // ===== 간단한 기즈모 관리 (정상 작동하는 viewer.html 방식) =====
+    function attachGizmoToModel() {
+      if (!rootContainer) {
+        console.warn('No rootContainer found');
+        return;
+      }
+      
+      // 기즈모를 직접 rootContainer에 연결 (피벗 없이)
+      gizmoManager.attachToMesh(rootContainer);
+      console.log('Gizmo attached directly to rootContainer');
+    }
+
+    // ===== 마우스 오버 경계박스 표시 =====
+    let hoverBoundingBox = null;
+    let modelBoundingBox = null;
+    
+    function showHoverBoundingBox(mesh) {
+      // 기존 호버 박스 제거
+      if (hoverBoundingBox) { 
+        hoverBoundingBox.dispose(); 
+        hoverBoundingBox = null; 
+      }
+      
+      if (!mesh || !rootContainer) return;
+      
+      // 개별 메시의 경계박스 표시
+      const bounds = mesh.getBoundingInfo();
+      hoverBoundingBox = BABYLON.MeshBuilder.CreateBox("hoverBoundingBox", {size:1}, scene);
+      hoverBoundingBox.scaling = bounds.boundingBox.maximumWorld.subtract(bounds.boundingBox.minimumWorld);
+      hoverBoundingBox.position = bounds.boundingBox.centerWorld;
+      hoverBoundingBox.isPickable = false;
+      hoverBoundingBox.visibility = 0.6;
+      
+      // 호버 박스 재질
+      hoverBoundingBox.material = new BABYLON.StandardMaterial("hoverBoundingMat", scene);
+      hoverBoundingBox.material.diffuseColor = new BABYLON.Color3(1, 0.8, 0); // 주황색
+      hoverBoundingBox.material.alpha = 0.3;
+      hoverBoundingBox.material.emissiveColor = new BABYLON.Color3(1, 0.8, 0);
+      hoverBoundingBox.material.wireframe = true;
+    }
+    
+    function showModelBoundingBox() {
+      // 기존 모델 박스 제거
+      if (modelBoundingBox) { 
+        modelBoundingBox.dispose(); 
+        modelBoundingBox = null; 
+      }
+      
+      if (!rootContainer) return;
+      
+      // 전체 모델의 경계박스 표시
+      const bounds = computeBounds(rootContainer);
+      if (bounds) {
+        modelBoundingBox = BABYLON.MeshBuilder.CreateBox("modelBoundingBox", {size:1}, scene);
+        modelBoundingBox.scaling = bounds.size;
+        modelBoundingBox.position = bounds.center;
+        modelBoundingBox.isPickable = false;
+        modelBoundingBox.visibility = 0.8;
+        
+        // 모델 박스 재질
+        modelBoundingBox.material = new BABYLON.StandardMaterial("modelBoundingMat", scene);
+        modelBoundingBox.material.diffuseColor = new BABYLON.Color3(0, 0.8, 1); // 청색
+        modelBoundingBox.material.alpha = 0.4;
+        modelBoundingBox.material.emissiveColor = new BABYLON.Color3(0, 0.8, 1);
+        modelBoundingBox.material.wireframe = true;
+      }
+    }
+    
+    function removeAllBoundingBoxes() {
+      if (hoverBoundingBox) { 
+        hoverBoundingBox.dispose(); 
+        hoverBoundingBox = null; 
+      }
+      if (modelBoundingBox) { 
+        modelBoundingBox.dispose(); 
+        modelBoundingBox = null; 
+      }
+    }
+
+    // 마우스 무브 이벤트 - 호버 경계박스 표시
+    canvas.addEventListener('mousemove', (e) => {
+      const pick = scene.pick(scene.pointerX, scene.pointerY);
+      if (pick?.hit && pick.pickedMesh && pick.pickedMesh !== ground) {
+        showHoverBoundingBox(pick.pickedMesh);
+      } else {
+        if (hoverBoundingBox) { 
+          hoverBoundingBox.dispose(); 
+          hoverBoundingBox = null; 
+        }
+      }
+    });
+
+    // ===== 전체 모델 선택만 지원 =====
+    let selectedModel = null;
+
+    canvas.addEventListener('click', ()=>{
+      // 항상 전체 모델 선택
+      if (rootContainer) {
+        selectedModel = rootContainer;
+        
+        // 기즈모를 전체 모델에 직접 연결
+        gizmoManager.attachToMesh(rootContainer);
+        
+        // 현재 모드 재적용
+        setTimeout(() => {
+          setMode(currentMode);
+        }, 50);
+        
+        // 전체 모델 경계박스 표시
+        showModelBoundingBox();
+        
+        console.log(`Selected whole model, Mode: ${currentMode}`);
+        
+        // 모델 정보 팝업에 선택 정보 전달
+        if (modelInfoWindow && !modelInfoWindow.closed) {
+          sendModelInfoToPopup();
+        }
+      } else {
+        selectedModel = null;
+        gizmoManager.attachToMesh(null);
+        removeAllBoundingBoxes();
+      }
+    });
+
+    // 더블클릭으로 전체 모델 포커스
+    canvas.addEventListener('dblclick', ()=>{
+      if (selectedModel || rootContainer) {
+        focusNode(rootContainer);
+      }
+    });
+
+    // ===== 키보드 컨트롤 =====
+    window.addEventListener('keydown', (e)=>{
+      if (['INPUT','TEXTAREA'].includes((e.target.tagName||''))) return;
+      const k = e.key.toLowerCase();
+      if (k==='w') {
+        setMode('translate');
+        console.log('Translation mode activated');
+      }
+      if (k==='e') {
+        setMode('rotate');
+        console.log('Rotation mode activated');
+      }
+      if (k==='r') {
+        setMode('scale');
+        console.log('Scale mode activated');
+      }
+      if (k==='l') setSpace(!spaceLocal);
+      if (k==='f' && gizmoManager.attachedMesh) focusNode(gizmoManager.attachedMesh);
+      if (k==='i') { // 'I'키로 정보 패널 토글
+        toggleModelInfoPopup();
+      }
+      if (k==='escape') { // ESC키로 팝업 닫기
+        if (modelInfoWindow && !modelInfoWindow.closed) {
+          modelInfoWindow.close();
+        }
+      }
+    });
+
+    // ===== 모델 정보 팝업 관리 =====
+    function toggleModelInfoPopup() {
+      if (modelInfoWindow && !modelInfoWindow.closed) {
+        modelInfoWindow.close();
+        modelInfoWindow = null;
+      } else {
+        openModelInfoPopup();
+      }
+    }
+
+    function openModelInfoPopup() {
+      if (!rootContainer) {
+        alert('로드된 모델이 없습니다. 먼저 모델을 로드해주세요.');
+        return;
+      }
+
+      // 모델이 선택되지 않은 상태라면 먼저 선택
+      if (!selectedModel) {
+        selectedModel = rootContainer;
+        gizmoManager.attachToMesh(rootContainer);
+      }
+
+      // 팝업 윈도우 열기
+      const popupWidth = 400;
+      const popupHeight = 600;
+      const left = window.screenX + window.outerWidth - popupWidth - 50;
+      const top = window.screenY + 50;
+
+      modelInfoWindow = window.open(
+        'model-info.html',
+        'modelInfo',
+        `width=${popupWidth},height=${popupHeight},scrollbars=yes,resizable=yes,left=${left},top=${top}`
+      );
+
+      if (!modelInfoWindow) {
+        alert('팝업이 차단되었습니다. 브라우저 설정에서 팝업을 허용해주세요.');
+        return;
+      }
+
+      // 팝업 로드 완료 대기 후 데이터 전송
+      modelInfoWindow.addEventListener('load', function() {
+        setTimeout(() => {
+          sendModelInfoToPopup();
+        }, 500);
+      });
+    }
+
+    function sendModelInfoToPopup() {
+      if (!modelInfoWindow || modelInfoWindow.closed || !rootContainer) return;
+
+      const bounds = computeBounds(rootContainer);
+      const modelData = {
+        name: '전체 모델',
+        id: rootContainer.name || 'rootContainer',
+        bounds: bounds ? {
+          size: {
+            x: bounds.size.x.toFixed(4),
+            y: bounds.size.y.toFixed(4), 
+            z: bounds.size.z.toFixed(4)
+          },
+          center: {
+            x: bounds.center.x.toFixed(4),
+            y: bounds.center.y.toFixed(4),
+            z: bounds.center.z.toFixed(4)
+          }
+        } : null,
+        transform: {
+          position: {
+            x: rootContainer.position.x.toFixed(4),
+            y: rootContainer.position.y.toFixed(4),
+            z: rootContainer.position.z.toFixed(4)
+          },
+          rotation: rootContainer.rotationQuaternion ? {
+            x: (rootContainer.rotationQuaternion.toEulerAngles().x * 180 / Math.PI).toFixed(1),
+            y: (rootContainer.rotationQuaternion.toEulerAngles().y * 180 / Math.PI).toFixed(1),
+            z: (rootContainer.rotationQuaternion.toEulerAngles().z * 180 / Math.PI).toFixed(1)
+          } : { x: 0, y: 0, z: 0 },
+          scaling: {
+            x: rootContainer.scaling.x.toFixed(3),
+            y: rootContainer.scaling.y.toFixed(3),
+            z: rootContainer.scaling.z.toFixed(3)
+          }
+        },
+        currentMode: currentMode
+      };
+
+      modelInfoWindow.postMessage({
+        type: 'modelData',
+        data: modelData
+      }, '*');
+    }
+
+    // ===== 설정 관련 함수들 =====
+    let toolboxWindow = null; // 설정 툴박스 팝업 참조
+
+    // 배경색 변경
+    function updateBackground(color) {
+      console.log('Updating background color to:', color);
+      try {
+        const r = parseInt(color.slice(1,3), 16) / 255;
+        const g = parseInt(color.slice(3,5), 16) / 255; 
+        const b = parseInt(color.slice(5,7), 16) / 255;
+        scene.clearColor = new BABYLON.Color4(r, g, b, 1);
+        setLS('bgColor', color);
+        console.log('Background color successfully changed to:', color);
+      } catch(e) {
+        console.error('Error updating background color:', e);
+      }
+    }
+
+    // 그리드 업데이트
+    function updateGrid(options) {
+      console.log('Updating grid with options:', options);
+      
+      if (options.visible !== undefined) {
+        ground.setEnabled(options.visible);
+        setLS('gridVis', options.visible);
+        console.log('Grid visibility set to:', options.visible);
+      }
+      if (options.lineColor) {
+        try {
+          gridMat.lineColor = BABYLON.Color3.FromHexString(options.lineColor);
+          setLS('gridLineColor', options.lineColor);
+          console.log('Grid line color set to:', options.lineColor);
+        } catch(e) {
+          console.error('Error setting grid line color:', e);
+        }
+      }
+      if (options.mainColor) {
+        try {
+          gridMat.mainColor = BABYLON.Color3.FromHexString(options.mainColor);
+          setLS('gridMainColor', options.mainColor);
+          console.log('Grid main color set to:', options.mainColor);
+        } catch(e) {
+          console.error('Error setting grid main color:', e);
+        }
+      }
+      if (options.size) {
+        try {
+          const newSize = parseFloat(options.size);
+          ground.dispose();
+          ground = BABYLON.Mesh.CreateGround("grid", newSize, newSize, 2, scene);
+          ground.material = gridMat;
+          setLS('gridSize', newSize);
+          console.log('Grid size set to:', newSize);
+        } catch(e) {
+          console.error('Error setting grid size:', e);
+        }
+      }
+    }
+
+    // 조명 업데이트
+    function updateLighting(options) {
+      // Hemispheric light
+      if (options.hemiVisible !== undefined) {
+        const hemi = scene.getLightByName("hemi");
+        if (hemi) hemi.setEnabled(options.hemiVisible);
+        setLS('hemiToggle', options.hemiVisible);
+      }
+      if (options.hemiIntensity !== undefined) {
+        const hemi = scene.getLightByName("hemi");
+        if (hemi) hemi.intensity = options.hemiIntensity;
+        setLS('hemiIntensity', options.hemiIntensity);
+      }
+      
+      // Directional light
+      if (options.dirVisible !== undefined) {
+        const dir = scene.getLightByName("dir");
+        if (dir) dir.setEnabled(options.dirVisible);
+        setLS('dirToggle', options.dirVisible);
+      }
+      if (options.dirIntensity !== undefined) {
+        const dir = scene.getLightByName("dir");
+        if (dir) dir.intensity = options.dirIntensity;
+        setLS('dirIntensity', options.dirIntensity);
+      }
+
+      // Sun light (새로 생성 또는 업데이트)
+      let sunLight = scene.getLightByName("sun");
+      
+      if (options.sunVisible !== undefined) {
+        if (options.sunVisible) {
+          if (!sunLight) {
+            sunLight = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(0, -1, 0), scene);
+            console.log('Created new sun light');
+          }
+          sunLight.setEnabled(true);
+          
+          if (options.sunIntensity !== undefined) {
+            sunLight.intensity = options.sunIntensity;
+            setLS('sunIntensity', options.sunIntensity);
+            console.log('Sun intensity set to:', options.sunIntensity);
+          }
+          
+          // 태양 위치 계산 (방위각, 고도)
+          if (options.sunAzimuth !== undefined || options.sunAltitude !== undefined) {
+            const azimuth = (options.sunAzimuth !== undefined ? options.sunAzimuth : parseFloat(getLS('sunAzimuth', '135'))) * Math.PI / 180;
+            const altitude = (options.sunAltitude !== undefined ? options.sunAltitude : parseFloat(getLS('sunAltitude', '35'))) * Math.PI / 180;
+            
+            const x = Math.cos(altitude) * Math.cos(azimuth);
+            const y = -Math.sin(altitude);
+            const z = Math.cos(altitude) * Math.sin(azimuth);
+            
+            sunLight.direction = new BABYLON.Vector3(x, y, z);
+            
+            if (options.sunAzimuth !== undefined) setLS('sunAzimuth', options.sunAzimuth);
+            if (options.sunAltitude !== undefined) setLS('sunAltitude', options.sunAltitude);
+            
+            console.log('Sun direction set to:', x, y, z, 'azimuth:', options.sunAzimuth || parseFloat(getLS('sunAzimuth', '135')), 'altitude:', options.sunAltitude || parseFloat(getLS('sunAltitude', '35')));
+          }
+          
+          // 그림자 설정
+          if (options.sunShadows !== undefined) {
+            if (options.sunShadows && !sunLight.getShadowGenerator()) {
+              try {
+                const shadowGenerator = new BABYLON.ShadowGenerator(1024, sunLight);
+                shadowGenerator.useBlurExponentialShadowMap = true;
+                shadowGenerator.blurKernel = 32;
+                
+                // 모든 메시에 그림자 캐스터 추가
+                if (rootContainer) {
+                  rootContainer.getChildMeshes().forEach(mesh => {
+                    shadowGenerator.addShadowCaster(mesh);
+                  });
+                }
+                ground.receiveShadows = true;
+                console.log('Sun shadows enabled');
+              } catch(e) {
+                console.error('Error setting up sun shadows:', e);
+              }
+            }
+            setLS('sunShadows', options.sunShadows);
+          }
+          
+          setLS('sunToggle', true);
+          console.log('Sun light enabled');
+        } else {
+          if (sunLight) {
+            sunLight.setEnabled(false);
+            console.log('Sun light disabled');
+          }
+          setLS('sunToggle', false);
+        }
+      }
+    }
+
+    // 스타일 적용
+    function applyStyle(styleData) {
+      console.log('Applying style with data:', styleData);
+      
+      if (!rootContainer) {
+        console.warn('No rootContainer found for style application');
+        return;
+      }
+      
+      const meshes = rootContainer.getChildMeshes();
+      console.log('Found meshes for styling:', meshes.length);
+      
+      meshes.forEach((mesh, index) => {
+        console.log(`Applying style to mesh ${index}: ${mesh.name}`);
+        
+        try {
+          // 윤곽선/에지
+          if (styleData.useOutline !== undefined) {
+            if (styleData.useOutline) {
+              mesh.enableEdgesRendering();
+              mesh.edgesWidth = styleData.outlineWidth || 0.02;
+              mesh.edgesColor = BABYLON.Color4.FromHexString(styleData.outlineColor || '#111827');
+              console.log(`Outline enabled for ${mesh.name}`);
+            } else {
+              mesh.disableEdgesRendering();
+              console.log(`Outline disabled for ${mesh.name}`);
+            }
+          }
+          
+          // 에지 렌더링 (별도 설정)
+          if (styleData.useEdges !== undefined) {
+            if (styleData.useEdges) {
+              mesh.enableEdgesRendering();
+              mesh.edgesWidth = styleData.edgesWidth || 15;
+              mesh.edgesColor = BABYLON.Color4.FromHexString(styleData.edgesColor || '#000000');
+              console.log(`Edges enabled for ${mesh.name}`);
+            } else if (!styleData.useOutline) {
+              mesh.disableEdgesRendering();
+              console.log(`Edges disabled for ${mesh.name}`);
+            }
+          }
+          
+          // 재질이 있는 경우에만 적용
+          if (mesh.material) {
+            // 와이어프레임
+            if (styleData.useWire !== undefined) {
+              mesh.material.wireframe = styleData.useWire;
+              console.log(`Wireframe ${styleData.useWire ? 'enabled' : 'disabled'} for ${mesh.name}`);
+            }
+            
+            // 양면 렌더링
+            if (styleData.useDouble !== undefined) {
+              mesh.material.backFaceCulling = !styleData.useDouble;
+              console.log(`Double-sided ${styleData.useDouble ? 'enabled' : 'disabled'} for ${mesh.name}`);
+            }
+            
+            // PBR 재질인 경우만 색상/재질 속성 적용
+            if (mesh.material.albedoColor !== undefined) {
+              if (styleData.baseColor) {
+                mesh.material.albedoColor = BABYLON.Color3.FromHexString(styleData.baseColor);
+                console.log(`Base color applied to ${mesh.name}: ${styleData.baseColor}`);
+              }
+              
+              if (styleData.metallic !== undefined) {
+                mesh.material.metallicFactor = styleData.metallic;
+                console.log(`Metallic factor applied to ${mesh.name}: ${styleData.metallic}`);
+              }
+              
+              if (styleData.roughness !== undefined) {
+                mesh.material.roughnessFactor = styleData.roughness;
+                console.log(`Roughness factor applied to ${mesh.name}: ${styleData.roughness}`);
+              }
+              
+              if (styleData.emissiveColor) {
+                mesh.material.emissiveColor = BABYLON.Color3.FromHexString(styleData.emissiveColor);
+                console.log(`Emissive color applied to ${mesh.name}: ${styleData.emissiveColor}`);
+              }
+            }
+          } else {
+            console.warn(`No material found for mesh: ${mesh.name}`);
+          }
+        } catch(e) {
+          console.error(`Error applying style to mesh ${mesh.name}:`, e);
+        }
+      });
+      
+      // 설정 저장
+      Object.keys(styleData).forEach(key => {
+        setLS(key, styleData[key]);
+      });
+      
+      console.log('Style application completed');
+    }
+
+    // 현재 설정을 툴박스에 전송
+    function sendCurrentSettingsToToolbox() {
+      if (!toolboxWindow || toolboxWindow.closed) return;
+      
+      const currentSettings = {
+        bgColor: getLS('bgColor', '#0f1115'),
+        gridVis: getLS('gridVis', 'true') === 'true',
+        gridLineColor: getLS('gridLineColor', '#3a4153'),
+        gridMainColor: getLS('gridMainColor', '#232531'),
+        gridSize: getLS('gridSize', '10'),
+        hemiToggle: getLS('hemiToggle', 'true') === 'true',
+        hemiIntensity: getLS('hemiIntensity', '0.7'),
+        dirToggle: getLS('dirToggle', 'true') === 'true',
+        dirIntensity: getLS('dirIntensity', '1.0'),
+        sunToggle: getLS('sunToggle', 'false') === 'true',
+        sunIntensity: getLS('sunIntensity', '1.5'),
+        sunAzimuth: getLS('sunAzimuth', '135'),
+        sunAltitude: getLS('sunAltitude', '35'),
+        sunShadows: getLS('sunShadows', 'true') === 'true'
+      };
+      
+      toolboxWindow.postMessage({
+        type: 'syncSettings',
+        data: currentSettings
+      }, '*');
+    }
+
+    // ===== 팝업으로부터 메시지 수신 =====
+    window.addEventListener('message', function(event) {
+      console.log('Received message in main viewer:', event.data, 'from:', event.source);
+      console.log('Message type:', typeof event.data, 'Keys:', Object.keys(event.data || {}));
+      
+      if (!event.data) return;
+      
+      const { type, data } = event.data;
+      
+      // 모델 정보 팝업에서 온 메시지
+      if (modelInfoWindow && event.source === modelInfoWindow) {
+        switch(type) {
+          case 'transformChange':
+            applyTransformFromPopup(data);
+            break;
+          case 'modeChange':
+            setMode(data.mode);
+            break;
+          case 'resetTransform':
+            resetTransform();
+            break;
+          case 'focusModel':
+            if (rootContainer) focusNode(rootContainer);
+            break;
+          case 'requestUpdate':
+            sendModelInfoToPopup();
+            break;
+        }
+      }
+      
+      // 툴박스 팝업에서 온 메시지 (소스 체크 완화)
+      if (!modelInfoWindow || event.source !== modelInfoWindow) {
+        console.log('Processing potential toolbox message:', type, data);
+        
+        // 툴박스 윈도우 참조 업데이트 (처음 메시지를 받을 때)
+        if (!toolboxWindow || toolboxWindow.closed) {
+          toolboxWindow = event.source;
+          console.log('Updated toolboxWindow reference');
+        }
+        
+        switch(type) {
+          case 'to3DView':
+            console.log('Nested message - processing:', data.type, data.data);
+            handleToolboxMessage(data.type, data.data);
+            break;
+          case 'toolboxPopupReady':
+            // 툴박스가 준비되면 현재 설정 전송
+            setTimeout(() => sendCurrentSettingsToToolbox(), 500);
+            break;
+          // 직접적인 메시지들도 처리
+          case 'updateBackground':
+            console.log('Direct updateBackground message');
+            updateBackground(data.color);
+            break;
+          case 'updateGrid':
+            console.log('Direct updateGrid message');
+            updateGrid(data);
+            break;
+          case 'updateLighting':
+            console.log('Direct updateLighting message');
+            updateLighting(data);
+            break;
+          case 'applyStyle':
+            console.log('Direct applyStyle message');
+            applyStyle(data);
+            break;
+          default:
+            console.log('Unknown message type from toolbox:', type);
+        }
+      }
+    });
+
+    // 툴박스 메시지 처리
+    function handleToolboxMessage(messageType, messageData) {
+      console.log('Handling toolbox message:', messageType, messageData);
+      
+      try {
+        switch(messageType) {
+          case 'updateBackground':
+            updateBackground(messageData.color);
+            break;
+          case 'updateGrid':
+            updateGrid(messageData);
+            break;
+          case 'updateLighting':
+            updateLighting(messageData);
+            break;
+          case 'applyStyle':
+            applyStyle(messageData);
+            break;
+          case 'setMode':
+            setMode(messageData.mode);
+            break;
+          case 'loadModel':
+            loadModelFromData(messageData);
+            break;
+          case 'resetScene':
+            // 씬 리셋 로직
+            if (currentContainer) {
+              gizmoManager.attachToMesh(null);
+              currentContainer.removeAllFromScene();
+              currentContainer.dispose();
+              currentContainer = null;
+            }
+            removeAllBoundingBoxes();
+            rootContainer.getChildren().forEach(c=>c.dispose());
+            rootContainer = new BABYLON.TransformNode("rootContainer", scene);
+            selectedModel = null;
+            break;
+          case 'focusMesh':
+            if (rootContainer) focusNode(rootContainer);
+            break;
+          case 'requestMeshList':
+            // 메시 리스트 전송
+            if (toolboxWindow && !toolboxWindow.closed && rootContainer) {
+              const meshes = rootContainer.getChildMeshes(false).map(m => ({
+                name: m.name,
+                id: m.id
+              }));
+              toolboxWindow.postMessage({
+                type: 'meshListUpdate',
+                data: { meshes }
+              }, '*');
+            }
+            break;
+          default:
+            console.warn('Unknown toolbox message type:', messageType);
+        }
+      } catch (error) {
+        console.error('Error handling toolbox message:', messageType, error);
+      }
+    }
+
+    function applyTransformFromPopup(data) {
+      if (!rootContainer) return;
+      
+      const { property, axis, value } = data;
+      
+      if (property === 'position') {
+        rootContainer.position[axis] = value;
+      } else if (property === 'rotation') {
+        if (!rootContainer.rotationQuaternion) {
+          rootContainer.rotationQuaternion = BABYLON.Quaternion.FromEulerAngles(0, 0, 0);
+        }
+        const e = rootContainer.rotationQuaternion.toEulerAngles();
+        e[axis] = value * Math.PI / 180; // 도를 라디안으로
+        rootContainer.rotationQuaternion = BABYLON.Quaternion.RotationYawPitchRoll(e.y, e.x, e.z);
+      } else if (property === 'scaling') {
+        rootContainer.scaling[axis] = Math.max(0.001, value);
+      }
+      
+      rootContainer.computeWorldMatrix(true);
+      
+      // 경계박스 업데이트
+      if (modelBoundingBox) {
+        showModelBoundingBox();
+      }
+      
+      // 팝업에 업데이트된 정보 다시 전송
+      setTimeout(() => {
+        sendModelInfoToPopup();
+      }, 50);
+    }
+
+    function resetTransform() {
+      if (!rootContainer) return;
+      
+      rootContainer.position.set(0, 0, 0);
+      rootContainer.rotationQuaternion = BABYLON.Quaternion.FromEulerAngles(0, 0, 0);
+      rootContainer.scaling.set(1, 1, 1);
+      rootContainer.computeWorldMatrix(true);
+      
+      if (modelBoundingBox) {
+        showModelBoundingBox();
+      }
+      
+      sendModelInfoToPopup();
+    }
+
+    // ===== 기타 기존 함수들 =====
+    async function loadModelFromData(modelData) {
+      try {
+        if (currentContainer) {
+          gizmoManager.attachToMesh(null);
+          currentContainer.removeAllFromScene();
+          currentContainer.dispose();
+          currentContainer = null;
+        }
+        removeAllBoundingBoxes();
+        
+        rootContainer.getChildren().forEach(c=>c.dispose());
+        rootContainer = new BABYLON.TransformNode("rootContainer", scene);
+        rootContainer.rotationQuaternion = BABYLON.Quaternion.FromEulerAngles(0, 0, 0);
+
+        const byteCharacters = atob(modelData.content);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray]);
+        const file = new File([blob], modelData.filename);
+
+        BABYLON.FilesInputStore.FilesToLoad = {};
+        BABYLON.FilesInputStore.FilesToLoad[modelData.filename.toLowerCase()] = file;
+
+        const pluginExt = /\.glb$/i.test(modelData.filename) ? ".glb" : ".gltf";
+        
+        currentContainer = await BABYLON.SceneLoader.LoadAssetContainerAsync("file:", modelData.filename, scene, null, pluginExt);
+        currentContainer.addAllToScene();
+
+        const roots = currentContainer.meshes.filter(m => !m.parent);
+        for (const r of roots) {
+          attachKeepWorld(r, rootContainer);
+        }
+
+        rootContainer.computeWorldMatrix(true);
+        
+        let bounds = computeBounds(rootContainer);
+        
+        if (bounds) {
+          let scale = 1.0;
+          const maxDim = Math.max(bounds.size.x, bounds.size.y, bounds.size.z);
+          
+          if (maxDim > 10.0) {
+            scale = 0.001;
+          }
+          
+          rootContainer.scaling = new BABYLON.Vector3(scale, scale, scale);
+          rootContainer.computeWorldMatrix(true);
+          
+          bounds = computeBounds(rootContainer);
+          
+          if (bounds) {
+            const offset = new BABYLON.Vector3(-bounds.center.x, -bounds.min.y, -bounds.center.z);
+            rootContainer.position.copyFrom(offset);
+            rootContainer.computeWorldMatrix(true);
+          }
+        }
+
+        attachGizmoToModel();
+        focusNode(rootContainer);
+        selectedModel = rootContainer;
+        
+        // 모델 정보 팝업이 열려있다면 업데이트
+        if (modelInfoWindow && !modelInfoWindow.closed) {
+          sendModelInfoToPopup();
+        }
+
+      } catch(err) {
+        console.error('Model load error:', err);
+      }
+    }
+
+    async function loadFilesDirectly(fileList) {
+      if (!fileList || fileList.length === 0) return;
+      
+      try {
+        if (currentContainer) {
+          gizmoManager.attachToMesh(null);
+          currentContainer.removeAllFromScene();
+          currentContainer.dispose();
+          currentContainer = null;
+        }
+        removeAllBoundingBoxes();
+        
+        rootContainer.getChildren().forEach(c=>c.dispose());
+        rootContainer = new BABYLON.TransformNode("rootContainer", scene);
+
+        BABYLON.FilesInputStore.FilesToLoad = {};
+        let mainFile = null;
+        
+        for (const f of fileList) {
+          BABYLON.FilesInputStore.FilesToLoad[f.name.toLowerCase()] = f;
+          if (!mainFile && (/\.(glb|gltf)$/i).test(f.name)) mainFile = f;
+        }
+        
+        if (!mainFile) {
+          alert("GLB 또는 GLTF 파일을 선택해주세요.");
+          return;
+        }
+
+        const pluginExt = /\.glb$/i.test(mainFile.name) ? ".glb" : ".gltf";
+        
+        currentContainer = await BABYLON.SceneLoader.LoadAssetContainerAsync("file:", mainFile.name, scene, null, pluginExt);
+        currentContainer.addAllToScene();
+
+        const roots = currentContainer.meshes.filter(m => !m.parent);
+        for (const r of roots) {
+          attachKeepWorld(r, rootContainer);
+        }
+
+        rootContainer.computeWorldMatrix(true);
+        
+        let bounds = computeBounds(rootContainer);
+        
+        if (bounds) {
+          let scale = 1.0;
+          const maxDim = Math.max(bounds.size.x, bounds.size.y, bounds.size.z);
+          if (maxDim > 10.0) {
+            scale = 0.001;
+          }
+          
+          rootContainer.scaling = new BABYLON.Vector3(scale, scale, scale);
+          rootContainer.computeWorldMatrix(true);
+          
+          bounds = computeBounds(rootContainer);
+          
+          if (bounds) {
+            const offset = new BABYLON.Vector3(-bounds.center.x, -bounds.min.y, -bounds.center.z);
+            rootContainer.position.copyFrom(offset);
+            rootContainer.computeWorldMatrix(true);
+          }
+        }
+
+        attachGizmoToModel();
+        focusNode(rootContainer);
+        selectedModel = rootContainer;
+        
+        // 모델 정보 팝업이 열려있다면 업데이트
+        if (modelInfoWindow && !modelInfoWindow.closed) {
+          sendModelInfoToPopup();
+        }
+        
+        console.log(`모델 로드 완료: ${mainFile.name}`);
+        
+      } catch(err) {
+        console.error('모델 로드 실패:', err);
+        alert('모델 로드에 실패했습니다: ' + err.message);
+      }
+    }
+
+    // ===== 초기 설정 복원 =====
+    function restoreInitialSettings() {
+      // 배경색 복원
+      const bgColor = getLS('bgColor', '#0f1115');
+      updateBackground(bgColor);
+      
+      // 그리드 설정 복원
+      const gridVis = getLS('gridVis', 'true') === 'true';
+      const gridLineColor = getLS('gridLineColor', '#3a4153');
+      const gridMainColor = getLS('gridMainColor', '#232531');
+      const gridSize = parseFloat(getLS('gridSize', '10'));
+      
+      updateGrid({
+        visible: gridVis,
+        lineColor: gridLineColor,
+        mainColor: gridMainColor,
+        size: gridSize
+      });
+      
+      // 조명 설정 복원
+      const lightingSettings = {
+        hemiVisible: getLS('hemiToggle', 'true') === 'true',
+        hemiIntensity: parseFloat(getLS('hemiIntensity', '0.7')),
+        dirVisible: getLS('dirToggle', 'true') === 'true',
+        dirIntensity: parseFloat(getLS('dirIntensity', '1.0')),
+        sunVisible: getLS('sunToggle', 'false') === 'true',
+        sunIntensity: parseFloat(getLS('sunIntensity', '1.5')),
+        sunAzimuth: parseFloat(getLS('sunAzimuth', '135')),
+        sunAltitude: parseFloat(getLS('sunAltitude', '35')),
+        sunShadows: getLS('sunShadows', 'true') === 'true'
+      };
+      
+      console.log('Restoring lighting settings:', lightingSettings);
+      updateLighting(lightingSettings);
+    }
+
+    // ===== 렌더링 시작 =====
+    engine.runRenderLoop(()=> scene.render());
+    window.addEventListener('resize', ()=> engine.resize());
+
+    // 초기 설정 적용
+    restoreInitialSettings();
+
+    // ===== 파일 로딩 기능 =====
+    const fileInput = document.getElementById('fileInput');
+    const modelInfoBtn = document.getElementById('modelInfoBtn');
+    const settingsBtn = document.getElementById('settingsBtn');
+
+    fileInput.addEventListener('change', async (e) => {
+      const files = e.target.files;
+      if (files && files.length) {
+        await loadFilesDirectly(files);
+      }
+      e.target.value = '';
+    });
+
+    modelInfoBtn.addEventListener('click', function() {
+      toggleModelInfoPopup();
+    });
+
+    settingsBtn.addEventListener('click', function() {
+      if (toolboxWindow && !toolboxWindow.closed) {
+        // 이미 열려있으면 포커스
+        toolboxWindow.focus();
+        return;
+      }
+      
+      toolboxWindow = window.open(
+        'viewer-toolbox.html', 
+        'toolbox', 
+        'width=400,height=800,scrollbars=yes,resizable=yes,left=' + (window.screenX + window.outerWidth) + ',top=' + window.screenY
+      );
+      
+      if (toolboxWindow) {
+        toolboxWindow.addEventListener('load', function() {
+          setTimeout(() => {
+            // 현재 설정 동기화
+            sendCurrentSettingsToToolbox();
+            
+            // 메시 리스트 전송
+            if (rootContainer) {
+              const meshes = rootContainer.getChildMeshes(false).map(m => ({
+                name: m.name,
+                id: m.id
+              }));
+              toolboxWindow.postMessage({
+                type: 'meshListUpdate',
+                data: { meshes }
+              }, '*');
+            }
+          }, 1000);
+        });
+      } else {
+        alert('팝업이 차단되었습니다. 브라우저 설정에서 팝업을 허용해주세요.');
+      }
+    });
+
+    // 드래그 앤 드롭 지원
+    document.addEventListener('dragover', function(e) {
+      e.preventDefault();
+    });
+
+    document.addEventListener('drop', function(e) {
+      e.preventDefault();
+      const files = e.dataTransfer?.files;
+      if (files && files.length) {
+        loadFilesDirectly(files);
+      }
+    });
+  </script>
+</body>
+</html>

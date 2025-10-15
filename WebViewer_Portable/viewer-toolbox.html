@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Babylon 3D 뷰어 - Toolbox</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body {
+      height:100%; margin:0;
+      background:#f4f6fb; color:#222; font-family:'Segoe UI', 'Roboto', 'Apple SD Gothic Neo', 'Noto Sans KR', Arial, sans-serif;
+    }
+    #sidebar {
+      position:fixed; 
+      left:0; top:0; 
+      width:100%; 
+      height:100%;
+      background:#f4f6fb; 
+      overflow:auto; 
+      padding:18px 16px;
+      display:flex; 
+      flex-direction:column; 
+      gap:18px;
+    }
+    .panel {
+      border:1px solid #e3e7ee; border-radius:16px; padding:18px 14px; background:#fff;
+      display:flex; flex-direction:column; gap:12px;
+      box-shadow:0 2px 8px 0 rgba(60,80,120,0.04);
+    }
+    .panel h3 {
+      margin:0 0 10px 0; font-size:15px; font-weight:600; color:#3a4153; opacity:1;
+    }
+    .row {
+      display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+    }
+    .btn {
+      border:none; border-radius:8px; padding:8px 14px; background:#e3e7ee; color:#3a4153; cursor:pointer;
+      font-weight:500; font-size:14px; transition:background .15s;
+      box-shadow:0 1px 4px 0 rgba(60,80,120,0.04);
+    }
+    .btn.small { padding:5px 10px; font-size:12px; }
+    .btn:hover { background:#d0d6e2; color:#222; }
+    .input {
+      background:#f7f8fa; border:1px solid #e3e7ee; border-radius:8px; color:#222; padding:7px 10px;
+      font-size:14px;
+    }
+    label.inline { display:inline-flex; align-items:center; gap:7px; font-size:13px; color:#3a4153; }
+    input[type=color]{ width:36px; height:28px; border:1px solid #e3e7ee; border-radius:8px; background:#f7f8fa; }
+    .item {
+      border:1px solid #e3e7ee; border-radius:12px; padding:10px; background:#f7f8fa;
+      box-shadow:0 1px 4px 0 rgba(60,80,120,0.04);
+    }
+    .nameLine { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .name { font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px; color:#3a4153; }
+    .stepRow { display:flex; gap:6px; flex-wrap:wrap; }
+    #file { display:none; }
+    .note { font-size:12px; color:#7a869a; margin-top:4px; }
+    #sidebar::-webkit-scrollbar { width:8px; background:#e3e7ee; }
+    #sidebar::-webkit-scrollbar-thumb { background:#d0d6e2; border-radius:8px; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <!-- 팝업 모드 헤더 -->
+    <div id="popupHeader" class="panel" style="display:none;">
+      <h3>🛠️ 3D 뷰어 설정</h3>
+      <div style="font-size:12px;color:#7a869a;">이 창에서 3D 모델의 모든 설정을 제어할 수 있습니다.</div>
+    </div>
+    
+    <!-- 선택된 모델 정보 패널 (동적 생성) -->
+    
+    <!-- Material (Texture) Editor Panel -->
+    <div class="panel" id="matPanel">
+      <h3>재질(질감) 편집</h3>
+      <div class="row">
+        <label class="inline">재질 선택</label>
+        <select id="matSelect" class="input" style="flex:1"></select>
+        <button id="matRefresh" class="btn small">새로고침</button>
+      </div>
+
+      <div class="row">
+        <label class="inline">Base Color</label>
+        <input type="color" id="baseColor" value="#cccccc" />
+        <label class="inline">Alpha</label>
+        <input type="range" id="alpha" min="0" max="1" step="0.01" value="1" style="width:120px"/>
+      </div>
+
+      <div class="row">
+        <label class="inline">Metallic</label>
+        <input type="range" id="metallic" min="0" max="1" step="0.01" value="0.0" style="width:180px"/>
+      </div>
+
+      <div class="row">
+        <label class="inline">Roughness</label>
+        <input type="range" id="roughness" min="0" max="1" step="0.01" value="0.9" style="width:180px"/>
+      </div>
+
+      <div class="row">
+        <label class="inline">Emissive</label>
+        <input type="color" id="emissiveColor" value="#000000" />
+        <input type="range" id="emissiveIntensity" min="0" max="5" step="0.05" value="0" style="width:120px"/>
+      </div>
+
+      <div class="row">
+        <label class="inline">Double Sided</label>
+        <input type="checkbox" id="doubleSided"/>
+        <label class="inline">AlphaMode</label>
+        <select id="alphaMode" class="input">
+          <option value="OPAQUE">OPAQUE</option>
+          <option value="MASK">MASK</option>
+          <option value="BLEND">BLEND</option>
+        </select>
+        <label class="inline">Cutoff</label>
+        <input type="range" id="alphaCutoff" min="0" max="1" step="0.01" value="0.5" style="width:100px"/>
+      </div>
+
+      <div class="row">
+        <label class="inline">BaseColor Tex</label>
+        <input type="file" id="texBase" accept=".png,.jpg,.jpeg,.webp" />
+        <button id="texBaseClear" class="btn small">x</button>
+      </div>
+      <div class="row">
+        <label class="inline">Normal Tex</label>
+        <input type="file" id="texNormal" accept=".png,.jpg,.jpeg,.webp" />
+        <label class="inline">강도</label>
+        <input type="range" id="normalLevel" min="0" max="2" step="0.05" value="1" style="width:100px"/>
+        <button id="texNormalClear" class="btn small">x</button>
+      </div>
+      <div class="row">
+        <label class="inline">Metallic/Roughness Tex</label>
+        <input type="file" id="texMR" accept=".png,.jpg,.jpeg,.webp" />
+        <label class="inline"><input type="checkbox" id="useMRPack" checked /> glTF 채널(G/B)</label>
+        <button id="texMRClear" class="btn small">x</button>
+      </div>
+      <div class="row">
+        <label class="inline">AO Tex</label>
+        <input type="file" id="texAO" accept=".png,.jpg,.jpeg,.webp" />
+        <button id="texAOClear" class="btn small">x</button>
+      </div>
+      <div class="row">
+        <label class="inline">Emissive Tex</label>
+        <input type="file" id="texEmissive" accept=".png,.jpg,.jpeg,.webp" />
+        <button id="texEmissiveClear" class="btn small">x</button>
+      </div>
+
+      <div class="note">• URDF 기반 GLB는 보통 텍스처가 없어요. 여기서 재질/텍스처를 실시간으로 붙여서 질감 테스트가 가능합니다.</div>
+    </div>
+
+    <!-- Sunlight Panel -->
+    <div class="panel" id="lightPanelSun">
+      <h3>태양광 (Sun)</h3>
+      <div class="row">
+        <label class="inline">사용 <input type="checkbox" id="sunToggle"></label>
+        <label class="inline">밝기 <input id="sunIntensity" class="input" type="range" min="0" max="4" step="0.05" value="1.5" style="width:140px"></label>
+      </div>
+      <div class="row">
+        <label class="inline">방위각° <input id="sunAzimuth" type="range" min="0" max="360" step="1" value="135" style="width:160px"></label>
+      </div>
+      <div class="row">
+        <label class="inline">고도° <input id="sunAltitude" type="range" min="-5" max="85" step="1" value="35" style="width:160px"></label>
+      </div>
+      <div class="row">
+        <label class="inline">그림자 <input type="checkbox" id="sunShadows" checked></label>
+      </div>
+      <div class="note">0°= +X(동), 90°= +Z(북). 고도는 지평선 기준.</div>
+    </div>
+
+    <!-- Light Control Panel (basic) -->
+    <div class="panel" id="lightPanelBasic">
+      <h3>조명</h3>
+      <div class="row">
+        <label class="inline">Hemi 사용 <input type="checkbox" id="hemiToggle" checked></label>
+        <label class="inline">밝기 <input id="hemiIntensity" class="input" type="range" min="0" max="2" step="0.05" value="0.7" style="width:140px"></label>
+      </div>
+      <div class="row">
+        <label class="inline">Directional 사용 <input type="checkbox" id="dirToggle" checked></label>
+        <label class="inline">밝기 <input id="dirIntensity" class="input" type="range" min="0" max="2" step="0.05" value="1.0" style="width:140px"></label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="row">
+        <label class="btn">모델 열기
+          <input id="file" type="file" accept=".glb,.gltf,.GLB,.GLTF,.bin,.png,.jpg,.jpeg" multiple/>
+        </label>
+        <button id="sceneReset" class="btn small">씬 리셋</button>
+        <button id="screenshot" class="btn small">스크린샷</button>
+      </div>
+      <div class="row">
+        <button id="modeMove" class="btn small">Move (W)</button>
+        <button id="modeRot"  class="btn small">Rotate (E)</button>
+        <button id="modeScl"  class="btn small">Scale (R)</button>
+        <button id="spaceBtn" class="btn small">Space: Local</button>
+        <button id="centerBtn" class="btn small">피벗 재중앙(C)</button>
+      </div>
+      <div class="row">
+        <div>회전°</div><input id="rotStep" class="input" type="number" step="1" value="5" style="width:70px">
+        <div>이동</div><input id="posStep" class="input" type="number" step="0.001" value="0.01" style="width:70px">
+        <div>검색</div><input id="search" class="input" placeholder="노드/조인트 이름" style="flex:1">
+      </div>
+      <div style="font-size:12px;opacity:.85">더블클릭=선택 · L=Local/World · F=포커스 · C=피벗 재중앙</div>
+    </div>
+
+    <div class="panel">
+      <h3>스타일/효과</h3>
+      <div class="row" style="gap:14px; align-items:center;">
+        <label class="inline">윤곽선 <input type="checkbox" id="useOutline" checked></label>
+        <label class="inline">폭 <input id="outlineWidth" class="input" type="number" step="0.005" value="0.02" style="width:70px"></label>
+        <label class="inline">색 <input id="outlineColor" type="color" value="#111827"></label>
+      </div>
+      <div class="row" style="gap:14px; align-items:center;">
+        <label class="inline">에지선 <input type="checkbox" id="useEdges" checked></label>
+        <label class="inline">폭 <input id="edgesWidth" class="input" type="number" step="1" value="15" style="width:70px"></label>
+        <label class="inline">색 <input id="edgesColor" type="color" value="#000000"></label>
+      </div>
+      <div class="row" style="gap:14px; align-items:center;">
+        <label class="inline">와이어프레임 <input type="checkbox" id="useWire"></label>
+        <label class="inline">양면표시 <input type="checkbox" id="useDouble"></label>
+        <label class="inline">하이라이트 <input type="checkbox" id="useHL"></label>
+      </div>
+      <div class="row" style="gap:8px">
+        <button id="applyStyleBtn" class="btn small">스타일 적용</button>
+        <button id="resetStyleBtn" class="btn small">스타일 원복</button>
+      </div>
+      <div class="row" style="gap:14px; align-items:center; margin-top:8px;">
+        <label class="inline">배경색상 <input id="bgColorPicker" type="color" value="#0f1115"></label>
+      </div>
+      <div class="row" style="gap:14px; align-items:center; margin-top:8px;">
+        <label class="inline">그리드 선색 <input id="gridLineColorPicker" type="color" value="#3a4153"></label>
+        <label class="inline">그리드 배경 <input id="gridMainColorPicker" type="color" value="#232531"></label>
+        <label class="inline">그리드 크기 <input id="gridSizeInput" type="number" min="1" max="100" value="10" style="width:70px"></label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>보기</h3>
+      <div class="row">
+        <label class="inline">그리드 표시 <input type="checkbox" id="gridVis" checked></label>
+        <label class="inline">단위 변환
+          <select id="unitSelect" class="input">
+            <option value="auto">자동</option>
+            <option value="m">미터(m)</option>
+            <option value="mm">밀리미터(mm)</option>
+            <option value="none">원본 유지</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <button id="fitBtn" class="btn small">뷰 맞추기</button>
+        <button id="inspectorBtn" class="btn small">인스펙터</button>
+      </div>
+    </div>
+
+    <div id="list"></div>
+  </div>
+
+  <script>
+    /*
+    =================================================================
+                    WebGL 3D 뷰어 - 툴박스 (설정 제어판)
+    =================================================================
+    기능: 재질 편집, 조명 제어, 스타일 설정, 모델 정보 표시
+    통신: postMessage로 3D 뷰어와 연동
+    저장: localStorage로 설정 지속성 보장
+    =================================================================
+    */
+    
+    // ===== localStorage 유틸리티 =====
+    function getLS(key, def) {
+      try { const v = localStorage.getItem(key); return v !== null ? v : def; } catch(e) { return def; }
+    }
+    function setLS(key, val) {
+      try { localStorage.setItem(key, val); } catch(e) {}
+    }
+
+    // 초기값 복원
+    function restoreSettings() {
+      const $ = id => document.getElementById(id);
+      
+      // 스타일 설정
+      $('useOutline').checked = getLS('useOutline', 'true') === 'true';
+      $('outlineWidth').value = getLS('outlineWidth', '0.02');
+      $('outlineColor').value = getLS('outlineColor', '#111827');
+      $('useEdges').checked = getLS('useEdges', 'true') === 'true';
+      $('edgesWidth').value = getLS('edgesWidth', '15');
+      $('edgesColor').value = getLS('edgesColor', '#000000');
+      $('useWire').checked = getLS('useWire', 'false') === 'true';
+      $('useDouble').checked = getLS('useDouble', 'false') === 'true';
+      $('useHL').checked = getLS('useHL', 'true') === 'true';
+
+      // 조명 설정
+      $('hemiToggle').checked = getLS('hemiToggle', 'true') === 'true';
+      $('dirToggle').checked = getLS('dirToggle', 'true') === 'true';
+      $('hemiIntensity').value = getLS('hemiIntensity', '0.7');
+      $('dirIntensity').value = getLS('dirIntensity', '1.0');
+      $('sunToggle').checked = getLS('sunToggle', 'false') === 'true';
+      $('sunIntensity').value = getLS('sunIntensity', '1.5');
+      $('sunAzimuth').value = getLS('sunAzimuth', '135');
+      $('sunAltitude').value = getLS('sunAltitude', '35');
+      $('sunShadows').checked = getLS('sunShadows', 'true') === 'true';
+
+      // 보기 설정
+      $('gridVis').checked = getLS('gridVis', 'true') === 'true';
+      $('unitSelect').value = getLS('unitSelect', 'auto');
+
+      // 배경/그리드 색상
+      $('bgColorPicker').value = getLS('bgColor', '#0f1115');
+      $('gridLineColorPicker').value = getLS('gridLineColor', '#3a4153');
+      $('gridMainColorPicker').value = getLS('gridMainColor', '#232531');
+      $('gridSizeInput').value = getLS('gridSize', '10');
+    }
+
+    // ===== 3D 뷰어 통신 함수 (핵심) =====
+    function send3DMessage(type, data = {}) {
+      console.log('Sending message:', type, data);
+      
+      // 팝업/iframe 모드 자동 감지하여 메시지 전송
+      if (window.opener && !window.opener.closed) {
+        // 팝업 모드: 부모 창(3D 뷰어)으로 직접 전송 (두 가지 방식 모두 시도)
+        window.opener.postMessage({
+          type: 'to3DView',
+          data: { type, data }
+        }, '*');
+        
+        // 직접적인 메시지도 보내기
+        window.opener.postMessage({
+          type: type,
+          data: data
+        }, '*');
+      } else if (window.parent !== window) {
+        // iframe 모드: 부모 창을 통해 전송
+        window.parent.postMessage({
+          type: 'to3DView',
+          data: { type, data }
+        }, '*');
+      }
+    }
+
+    // ===== 스타일 설정 적용 (윤곽선, 와이어프레임 등) =====
+    function applyCurrentStyles() {
+      const $ = id => document.getElementById(id);
+      
+      const styleData = {
+        useOutline: $('useOutline')?.checked || false,
+        outlineWidth: parseFloat($('outlineWidth')?.value || 0.02),
+        outlineColor: $('outlineColor')?.value || '#111827',
+        useEdges: $('useEdges')?.checked || false,
+        edgesWidth: parseFloat($('edgesWidth')?.value || 15),
+        edgesColor: $('edgesColor')?.value || '#000000',
+        useWire: $('useWire')?.checked || false,
+        useDouble: $('useDouble')?.checked || false,
+        useHL: $('useHL')?.checked || false,
+        metallic: parseFloat($('metallic')?.value || 0),
+        roughness: parseFloat($('roughness')?.value || 0.5),
+        emissive: parseFloat($('emissive')?.value || 0),
+        baseColor: $('baseColor')?.value || '#ffffff',
+        emissiveColor: $('emissiveColor')?.value || '#000000'
+      };
+      
+      console.log('Applying styles:', styleData);
+      send3DMessage('applyStyle', styleData);
+    }
+
+    // 현재 조명 설정 적용
+    function applyCurrentLighting() {
+      const $ = id => document.getElementById(id);
+      
+      const lightingData = {
+        hemiVisible: $('hemiToggle')?.checked || false,
+        hemiIntensity: parseFloat($('hemiIntensity')?.value || 1),
+        dirVisible: $('dirToggle')?.checked || false,
+        dirIntensity: parseFloat($('dirIntensity')?.value || 1),
+        sunVisible: $('sunToggle')?.checked || false,
+        sunIntensity: parseFloat($('sunIntensity')?.value || 1),
+        sunAzimuth: parseFloat($('sunAzimuth')?.value || 0),
+        sunAltitude: parseFloat($('sunAltitude')?.value || 45),
+        sunShadows: $('sunShadows')?.checked || false
+      };
+      
+      console.log('Applying lighting:', lightingData);
+      send3DMessage('updateLighting', lightingData);
+    }
+
+    // 이벤트 리스너 설정
+    function setupEventListeners() {
+      const $ = id => document.getElementById(id);
+
+      // 파일 로드
+      $('file').addEventListener('change', async (e) => {
+        const files = e.target.files;
+        if (files && files.length) {
+          const file = files[0];
+          if (/\.(glb|gltf)$/i.test(file.name)) {
+            // 팝업 모드인지 확인
+            if (window.opener && !window.opener.closed) {
+              // 팝업 모드: 부모 창의 loadFilesDirectly 함수 호출
+              window.opener.loadFilesDirectly([file]);
+            } else {
+              // iframe 모드: 기존 방식 사용
+              const reader = new FileReader();
+              reader.onload = function(event) {
+                const content = btoa(String.fromCharCode(...new Uint8Array(event.target.result)));
+                send3DMessage('loadModel', {
+                  filename: file.name,
+                  content: content
+                });
+              };
+              reader.readAsArrayBuffer(file);
+            }
+          }
+        }
+        e.target.value = '';
+      });
+
+      // 기본 컨트롤 버튼들
+      $('sceneReset').onclick = () => send3DMessage('resetScene');
+      $('modeMove').onclick = () => send3DMessage('setMode', { mode: 'translate' });
+      $('modeRot').onclick = () => send3DMessage('setMode', { mode: 'rotate' });
+      $('modeScl').onclick = () => send3DMessage('setMode', { mode: 'scale' });
+
+      // 스타일 버튼들
+      $('applyStyleBtn').onclick = () => {
+        console.log('Apply style button clicked');
+        applyCurrentStyles();
+      };
+      
+      $('resetStyleBtn').onclick = () => {
+        console.log('Reset style button clicked');
+        // 기본값으로 리셋
+        $('useOutline').checked = true;
+        $('useEdges').checked = true;
+        $('useWire').checked = false;
+        $('useDouble').checked = false;
+        $('useHL').checked = true;
+        applyCurrentStyles();
+      };
+
+      // 배경색 변경
+      const bgColorPicker = $('bgColorPicker');
+      console.log('bgColorPicker element:', bgColorPicker);
+      if (bgColorPicker) {
+        bgColorPicker.addEventListener('input', function() {
+          const color = this.value;
+          console.log('Background color changed to:', color);
+          setLS('bgColor', color);
+          send3DMessage('updateBackground', { color });
+        });
+      } else {
+        console.error('bgColorPicker element not found!');
+      }
+
+      // 그리드 설정
+      const gridVis = $('gridVis');
+      if (gridVis) {
+        gridVis.addEventListener('change', function() {
+          console.log('Grid visibility changed:', this.checked);
+          setLS('gridVis', this.checked);
+          send3DMessage('updateGrid', { visible: this.checked });
+        });
+      } else {
+        console.error('gridVis element not found!');
+      }
+
+      const gridLineColorPicker = $('gridLineColorPicker');
+      if (gridLineColorPicker) {
+        gridLineColorPicker.addEventListener('input', function() {
+          const color = this.value;
+          console.log('Grid line color changed:', color);
+          setLS('gridLineColor', color);
+          send3DMessage('updateGrid', { lineColor: color });
+        });
+      }
+
+      const gridMainColorPicker = $('gridMainColorPicker');
+      if (gridMainColorPicker) {
+        gridMainColorPicker.addEventListener('input', function() {
+          const color = this.value;
+          console.log('Grid main color changed:', color);
+          setLS('gridMainColor', color);
+          send3DMessage('updateGrid', { mainColor: color });
+        });
+      }
+
+      const gridSizeInput = $('gridSizeInput');
+      if (gridSizeInput) {
+        gridSizeInput.addEventListener('change', function() {
+          const size = parseFloat(this.value) || 10;
+          console.log('Grid size changed:', size);
+          setLS('gridSize', size);
+          send3DMessage('updateGrid', { size });
+        });
+      }
+
+      // 단위 선택
+      $('unitSelect').addEventListener('change', function() {
+        setLS('unitSelect', this.value);
+      });
+
+      // 검색 - 메쉬 포커스
+      $('search').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+          const name = this.value.trim();
+          if (name) {
+            send3DMessage('focusMesh', { name });
+          }
+        }
+      });
+
+      // 재질 관련 설정들의 localStorage 저장 및 3D 뷰어 전달
+      ['metallic', 'roughness', 'emissive'].forEach(id => {
+        $(id).addEventListener('input', e => {
+          setLS(id, e.target.value);
+          $(id + 'Disp').textContent = parseFloat(e.target.value).toFixed(2);
+          applyCurrentStyles();
+        });
+      });
+
+      ['baseColor', 'emissiveColor'].forEach(id => {
+        $(id).addEventListener('input', e => {
+          setLS(id, e.target.value);
+          applyCurrentStyles();
+        });
+      });
+
+      // 스타일 관련 설정들의 localStorage 저장 및 3D 뷰어 전달
+      ['useOutline', 'useEdges', 'useWire', 'useDouble', 'useHL'].forEach(id => {
+        $(id).addEventListener('change', e => {
+          console.log('Style setting changed:', id, e.target.checked);
+          setLS(id, e.target.checked);
+          applyCurrentStyles();
+        });
+      });
+
+      ['outlineWidth', 'outlineColor', 'edgesWidth', 'edgesColor'].forEach(id => {
+        const element = $(id);
+        if (element) {
+          // input 이벤트로 실시간 적용
+          element.addEventListener('input', e => {
+            console.log('Style setting changed:', id, e.target.value);
+            setLS(id, e.target.value);
+            applyCurrentStyles();
+          });
+        }
+      });
+
+      // 조명 관련 설정들의 localStorage 저장 및 3D 뷰어 전달
+      ['hemiToggle', 'dirToggle', 'sunToggle', 'sunShadows'].forEach(id => {
+        const element = $(id);
+        if (element) {
+          element.addEventListener('change', e => {
+            console.log('Light setting changed:', id, e.target.checked);
+            setLS(id, e.target.checked);
+            applyCurrentLighting();
+          });
+        } else {
+          console.error(`Light element not found: ${id}`);
+        }
+      });
+
+      ['hemiIntensity', 'dirIntensity', 'sunIntensity', 'sunAzimuth', 'sunAltitude'].forEach(id => {
+        const element = $(id);
+        if (element) {
+          element.addEventListener('input', e => {
+            console.log('Light setting changed:', id, e.target.value);
+            setLS(id, e.target.value);
+            applyCurrentLighting();
+          });
+        } else {
+          console.error(`Light element not found: ${id}`);
+        }
+      });
+    }
+
+    // ===== 선택된 모델 정보 패널 업데이트 =====
+    function updateSelectedInfoPanel(meshData) {
+      const sidebar = document.getElementById('sidebar');
+      let selPanel = document.getElementById('selectedInfoPanel');
+      
+      if (!selPanel) {
+        selPanel = document.createElement('div');
+        selPanel.id = 'selectedInfoPanel';
+        selPanel.className = 'panel';
+        sidebar.insertBefore(selPanel, sidebar.firstChild);
+      }
+
+      function vectorRow(label, vec) {
+        return `<div style='margin-bottom:10px;'>
+          <table style='border-collapse:collapse;width:100%;'>
+            <tr><th colspan='4' style='text-align:left;font-size:13px;color:#3a4153;padding-bottom:4px;'>${label}</th></tr>
+            <tr>
+              <th style='width:40px;text-align:center;'>X</th>
+              <th style='width:40px;text-align:center;'>Y</th>
+              <th style='width:40px;text-align:center;'>Z</th>
+            </tr>
+            <tr>
+              ${['x','y','z'].map(ax => `
+                <td style='text-align:center;padding:2px;'>
+                  <input type='number' step='0.01' value='${vec[ax] || 0}' data-ax='${ax}' class='vecInput' style='width:54px;'>
+                  <div style='display:flex;flex-direction:row;justify-content:center;gap:2px;margin-top:2px;'>
+                    <button class='btn small vecUp' data-ax='${ax}'>▲</button>
+                    <button class='btn small vecDown' data-ax='${ax}'>▼</button>
+                  </div>
+                </td>
+              `).join('')}
+            </tr>
+          </table>
+        </div>`;
+      }
+
+      selPanel.innerHTML = `<h3>선택된 모델 정보</h3>
+        <div>이름: ${meshData.name || ''}</div>
+        <div>id: ${meshData.id || ''}</div>
+        ${vectorRow('위치', meshData.position || {x:0,y:0,z:0})}
+        ${vectorRow('스케일', meshData.scaling || {x:1,y:1,z:1})}
+        ${vectorRow('회전(라디안)', meshData.rotation || {x:0,y:0,z:0})}`;
+      
+      selPanel.style.display = 'block';
+
+      // 입력 이벤트 바인딩
+      Array.from(selPanel.querySelectorAll('.vecInput')).forEach(input => {
+        input.addEventListener('change', function() {
+          const ax = this.getAttribute('data-ax');
+          const val = parseFloat(this.value) || 0;
+          const parentLabel = this.closest('table').querySelector('th').textContent;
+          
+          let updateType = '';
+          if (parentLabel.includes('위치')) updateType = 'position';
+          else if (parentLabel.includes('스케일')) updateType = 'scaling';
+          else if (parentLabel.includes('회전')) updateType = 'rotation';
+          
+          send3DMessage('updateMeshProperty', {
+            name: meshData.name,
+            property: updateType,
+            axis: ax,
+            value: val
+          });
+        });
+      });
+
+      // 버튼 이벤트 바인딩
+      Array.from(selPanel.querySelectorAll('.vecUp, .vecDown')).forEach(btn => {
+        btn.addEventListener('click', function() {
+          const isUp = this.classList.contains('vecUp');
+          const ax = this.getAttribute('data-ax');
+          const step = 0.01;
+          const td = this.closest('td');
+          const input = td.querySelector(`input[data-ax='${ax}']`);
+          const parentLabel = this.closest('table').querySelector('th').textContent;
+          
+          const currentVal = parseFloat(input.value) || 0;
+          const newVal = currentVal + (isUp ? step : -step);
+          input.value = newVal;
+          
+          let updateType = '';
+          if (parentLabel.includes('위치')) updateType = 'position';
+          else if (parentLabel.includes('스케일')) updateType = 'scaling';
+          else if (parentLabel.includes('회전')) updateType = 'rotation';
+          
+          send3DMessage('updateMeshProperty', {
+            name: meshData.name,
+            property: updateType,
+            axis: ax,
+            value: newVal
+          });
+        });
+      });
+    }
+
+    // 메쉬 목록 업데이트
+    function updateMeshList(meshes) {
+      const list = document.getElementById('list');
+      const q = (document.getElementById('search').value || '').trim().toLowerCase();
+      
+      list.innerHTML = '';
+      
+      meshes
+        .filter(m => (m.name || '').toLowerCase().includes(q))
+        .slice(0, 200)
+        .forEach(m => {
+          const card = document.createElement('div');
+          card.className = 'item';
+          
+          const head = document.createElement('div');
+          head.className = 'nameLine';
+          
+          const nm = document.createElement('div');
+          nm.className = 'name';
+          nm.textContent = m.name || '(mesh)';
+          
+          const btns = document.createElement('div');
+          btns.style.display = 'flex';
+          btns.style.gap = '6px';
+          
+          const sel = document.createElement('button');
+          sel.className = 'btn small';
+          sel.textContent = 'Select';
+          sel.onclick = () => send3DMessage('selectMesh', { name: m.name });
+          
+          const foc = document.createElement('button');
+          foc.className = 'btn small';
+          foc.textContent = 'Focus';
+          foc.onclick = () => send3DMessage('focusMesh', { name: m.name });
+          
+          head.appendChild(nm);
+          head.appendChild(btns);
+          btns.appendChild(sel);
+          btns.appendChild(foc);
+          
+          // 스텝 버튼들
+          const rRow = document.createElement('div');
+          rRow.className = 'stepRow';
+          ['x','y','z'].forEach(ax => {
+            const mBtn = document.createElement('button');
+            mBtn.className = 'btn small';
+            mBtn.textContent = `R${ax.toUpperCase()}-`;
+            mBtn.onclick = () => send3DMessage('stepRotate', { name: m.name, axis: ax, direction: -1 });
+            
+            const pBtn = document.createElement('button');
+            pBtn.className = 'btn small';
+            pBtn.textContent = `R${ax.toUpperCase()}+`;
+            pBtn.onclick = () => send3DMessage('stepRotate', { name: m.name, axis: ax, direction: 1 });
+            
+            rRow.appendChild(mBtn);
+            rRow.appendChild(pBtn);
+          });
+          
+          const tRow = document.createElement('div');
+          tRow.className = 'stepRow';
+          ['x','y','z'].forEach(ax => {
+            const mBtn = document.createElement('button');
+            mBtn.className = 'btn small';
+            mBtn.textContent = `T${ax.toUpperCase()}-`;
+            mBtn.onclick = () => send3DMessage('stepTranslate', { name: m.name, axis: ax, direction: -1 });
+            
+            const pBtn = document.createElement('button');
+            pBtn.className = 'btn small';
+            pBtn.textContent = `T${ax.toUpperCase()}+`;
+            pBtn.onclick = () => send3DMessage('stepTranslate', { name: m.name, axis: ax, direction: 1 });
+            
+            tRow.appendChild(mBtn);
+            tRow.appendChild(pBtn);
+          });
+          
+          card.appendChild(head);
+          card.appendChild(rRow);
+          card.appendChild(tRow);
+          list.appendChild(card);
+        });
+    }
+
+    // 3D 뷰어로부터 받은 설정을 UI에 적용
+    function applySyncedSettings(settings) {
+      console.log('Applying synced settings:', settings);
+      
+      const $ = id => document.getElementById(id);
+      
+      // UI 요소에 설정 적용
+      if (settings.bgColor && $('bgColorPicker')) $('bgColorPicker').value = settings.bgColor;
+      if (settings.gridVis !== undefined && $('gridVis')) $('gridVis').checked = settings.gridVis;
+      if (settings.gridLineColor && $('gridLineColorPicker')) $('gridLineColorPicker').value = settings.gridLineColor;
+      if (settings.gridMainColor && $('gridMainColorPicker')) $('gridMainColorPicker').value = settings.gridMainColor;
+      if (settings.gridSize !== undefined && $('gridSizeInput')) $('gridSizeInput').value = settings.gridSize;
+      
+      if (settings.hemiToggle !== undefined && $('hemiToggle')) $('hemiToggle').checked = settings.hemiToggle;
+      if (settings.hemiIntensity !== undefined && $('hemiIntensity')) $('hemiIntensity').value = settings.hemiIntensity;
+      if (settings.dirToggle !== undefined && $('dirToggle')) $('dirToggle').checked = settings.dirToggle;
+      if (settings.dirIntensity !== undefined && $('dirIntensity')) $('dirIntensity').value = settings.dirIntensity;
+      if (settings.sunToggle !== undefined && $('sunToggle')) $('sunToggle').checked = settings.sunToggle;
+      if (settings.sunIntensity !== undefined && $('sunIntensity')) $('sunIntensity').value = settings.sunIntensity;
+      if (settings.sunAzimuth !== undefined && $('sunAzimuth')) $('sunAzimuth').value = settings.sunAzimuth;
+      if (settings.sunAltitude !== undefined && $('sunAltitude')) $('sunAltitude').value = settings.sunAltitude;
+      if (settings.sunShadows !== undefined && $('sunShadows')) $('sunShadows').checked = settings.sunShadows;
+      
+      // localStorage에도 저장하여 지속성 확보
+      Object.keys(settings).forEach(key => {
+        setLS(key, settings[key]);
+      });
+    }
+
+    // 부모 창으로부터 메시지 수신
+    window.addEventListener('message', function(event) {
+      const { type, data } = event.data;
+      
+      switch(type) {
+        case 'meshSelected':
+          updateSelectedInfoPanel(data);
+          break;
+        case 'syncSettings':
+          applySyncedSettings(data);
+          break;
+          break;
+        case 'meshListUpdate':
+          updateMeshList(data.meshes);
+          break;
+        case 'materialListUpdate':
+          // TODO: 재질 목록 업데이트
+          break;
+      }
+    });
+
+    // 검색 입력 시 메쉬 목록 필터링
+    document.getElementById('search').addEventListener('input', function() {
+      // 현재 메쉬 목록을 다시 필터링해서 표시
+      // 실제로는 3D 뷰어에서 메쉬 목록을 받아와야 함
+      send3DMessage('requestMeshList');
+    });
+
+    // 팝업 모드 감지 및 초기화
+    function initializeToolbox() {
+      // 팝업 모드인지 확인
+      const isPopup = window.opener && !window.opener.closed;
+      
+      if (isPopup) {
+        // 팝업 모드: 헤더 표시
+        document.getElementById('popupHeader').style.display = 'block';
+        document.title = '3D 뷰어 설정';
+      }
+      
+      restoreSettings();
+      setupEventListeners();
+      
+      // 메시 리스트 요청
+      send3DMessage('requestMeshList');
+      
+      // 부모 창에 준비 완료 알림
+      if (window.parent !== window) {
+        window.parent.postMessage({ type: 'toolboxReady' }, '*');
+      }
+      
+      // 팝업 모드에서는 opener에게도 알림
+      if (isPopup) {
+        window.opener.postMessage({ type: 'toolboxPopupReady' }, '*');
+      }
+    }
+
+    // 초기화
+    document.addEventListener('DOMContentLoaded', initializeToolbox);
+  </script>
+</body>
+</html>
